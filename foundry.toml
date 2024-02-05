@@ -1,0 +1,10 @@
+[profile.default]
+srcs = ['contracts', 'src']
+out = 'out'
+libs = [ 'lib', 'node_modules']
+test = 'test'
+solc-version = "0.7.6"
+remappings = ["@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/","solidity-lib/=lib/solidity-lib/contracts/",
+"@uniswap/v2-core/=node_modules/@uniswap/v2-core/","@uniswap/v3-core/=node_modules/@uniswap/v3-core/",
+"@uniswap/lib/=node_modules/@uniswap/lib/",
+"base64-sol/=node_modules/base64-sol/"]

@@ -1,0 +1,13 @@
+# library
+node_modules/
+lib/
+
+# cache files
+cache/
+broadcast/
+
+# foundry-config
+out/
+
+# environment variables
+.env
