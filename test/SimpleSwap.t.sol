@@ -19,6 +19,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {TestToken} from "src/TestToken.sol";
 import {TestNonfungible} from "src/TestNonfungible.sol";
 import {SimpleSwap} from "src/SimpleSwap.sol";
+import "forge-std/StdUtils.sol";
 
 contract SimpleSwapTest is Test, IERC721Receiver {
     address public deployer = vm.envAddress("LOCAL_DEPLOYER");
@@ -35,6 +36,7 @@ contract SimpleSwapTest is Test, IERC721Receiver {
     address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
 
     uint24 public constant poolFee = 500;
+    uint160 internal constant INIT_PRICE = 5e10;
 
     struct Deposit {
         address owner;
@@ -69,15 +71,18 @@ contract SimpleSwapTest is Test, IERC721Receiver {
         );
 
         /* 给deployer转足够数量的token */
-        deal(DAI, deployer, 10000e18);
-        deal(USDC, deployer, 10000e18);
-        assert(IERC20(DAI).balanceOf(deployer) == 100e18);
-        assert(IERC20(USDC).balanceOf(deployer) == 100e18);
-        console2.log(IERC20(USDC).balanceOf(deployer));
+        // deal(DAI, deployer, 10000);
+        // deal(USDC, deployer, 10000e18);
+        // if (IERC20(DAI).balanceOf(deployer) != 100e18) revert();
+        // assert(IERC20(USDC).balanceOf(deployer) == 100e18);
+        // console2.log("USDC amount:", IERC20(USDC).balanceOf(deployer));
 
         /* 创建池子 */
+        address poolOne = poolFactory.createPool(TUSDC, TDAI, poolFee);
+        IUniswapV3Pool(poolOne).initialize(INIT_PRICE);
 
-        mintNewPosition(USDC, DAI);
+        // mintNewPosition(USDC, DAI);
+        mintNewPosition(TUSDC, TDAI);
         vm.stopPrank();
     }
 
@@ -173,7 +178,7 @@ contract SimpleSwapTest is Test, IERC721Receiver {
                 amount0Min: 0,
                 amount1Min: 0,
                 recipient: address(this),
-                deadline: block.timestamp
+                deadline: block.timestamp + 1 days
             });
 
         // Note that the pool defined by DAI/USDC and fee tier 0.3% must already be created and initialized in order to mint
