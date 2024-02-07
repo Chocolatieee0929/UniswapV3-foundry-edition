@@ -14,6 +14,7 @@ import {UniswapV3Factory} from "contracts/v3-core/UniswapV3Factory.sol";
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {TickMath} from "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "contracts/v3-periphery/libraries/PoolAddress.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {TestToken} from "src/TestToken.sol";
@@ -78,11 +79,26 @@ contract SimpleSwapTest is Test, IERC721Receiver {
         // console2.log("USDC amount:", IERC20(USDC).balanceOf(deployer));
 
         /* 创建池子 */
-        address poolOne = poolFactory.createPool(TUSDC, TDAI, poolFee);
-        IUniswapV3Pool(poolOne).initialize(INIT_PRICE);
+        address poolOne = nonfungiblePositionManager
+            .createAndInitializePoolIfNecessary(DAI, USDC, poolFee, INIT_PRICE);
+
+        PoolAddress.PoolKey memory poolKey = PoolAddress.PoolKey({
+            token0: DAI,
+            token1: USDC,
+            fee: poolFee
+        });
+
+        address computeAddress = PoolAddress.computeAddress(
+            address(poolFactory),
+            poolKey
+        );
+
+        console2.log("computeAddress:", computeAddress);
+
+        assertEq(computeAddress, address(poolOne));
 
         // mintNewPosition(USDC, DAI);
-        mintNewPosition(TUSDC, TDAI);
+        mintNewPosition(DAI, USDC);
         vm.stopPrank();
     }
 
