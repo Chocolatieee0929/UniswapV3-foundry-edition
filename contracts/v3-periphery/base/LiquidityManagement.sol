@@ -13,6 +13,8 @@ import '../libraries/LiquidityAmounts.sol';
 import './PeripheryPayments.sol';
 import './PeripheryImmutableState.sol';
 
+import "forge-std/console.sol";
+
 /// @title Liquidity management functions
 /// @notice Internal functions for safely managing liquidity in Uniswap V3
 abstract contract LiquidityManagement is IUniswapV3MintCallback, PeripheryImmutableState, PeripheryPayments {
@@ -61,6 +63,7 @@ abstract contract LiquidityManagement is IUniswapV3MintCallback, PeripheryImmuta
             PoolAddress.PoolKey({token0: params.token0, token1: params.token1, fee: params.fee});
 
         pool = IUniswapV3Pool(PoolAddress.computeAddress(factory, poolKey));
+        console.log("pool:", address(pool));
 
         // compute the liquidity amount
         {
