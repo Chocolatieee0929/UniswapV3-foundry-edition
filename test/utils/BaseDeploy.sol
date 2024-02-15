@@ -71,13 +71,6 @@ contract BaseDeploy is Test {
         // 部署3个token
         getToken(3);
 
-        /* 给deployer转足够数量的token */
-        // deal(DAI, deployer, 10000);
-        // deal(USDC, deployer, 10000e18);
-        // if (IERC20(DAI).balanceOf(deployer) != 100e18) revert();
-        // assert(IERC20(USDC).balanceOf(deployer) == 100e18);
-        // console2.log("USDC amount:", IERC20(USDC).balanceOf(deployer));
-
         // mintNewPosition(tokens[0], tokens[1]);
         vm.stopPrank();
     }
