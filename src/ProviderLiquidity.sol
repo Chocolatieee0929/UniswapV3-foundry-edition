@@ -8,12 +8,25 @@ import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "contracts/v3-periphery/libraries/TransferHelper.sol";
 import "contracts/v3-periphery/interfaces/INonfungiblePositionManager.sol";
 import "contracts/v3-periphery/base/LiquidityManagement.sol";
+import "contracts/v3-periphery/interfaces/ISwapRouter.sol";
+
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+/* 
+这是UniswapV3官方文档简单测试用例，
+在后续的测试里发现desposit存储的liquidity不准确，待修复
+*/
 
 contract ProviderLiquidity is IERC721Receiver {
+	event createDeposit(address owner, uint256 tokenId);
+
 	uint24 public constant poolFee = 3000;
 	address private _owner;
 
 	INonfungiblePositionManager public immutable nonfungiblePositionManager;
+	ISwapRouter public immutable swapRouter;
+
+	mapping(int24 => uint24) public tickSpacingFeeAmount;
 
 	/// @notice Represents the deposit of an NFT
 	struct Deposit {
@@ -26,9 +39,17 @@ contract ProviderLiquidity is IERC721Receiver {
 	/// @dev deposits[tokenId] => Deposit
 	mapping(uint256 => Deposit) public deposits;
 
-	constructor(INonfungiblePositionManager _nonfungiblePositionManager) {
+	constructor(
+		INonfungiblePositionManager _nonfungiblePositionManager,
+		ISwapRouter _swapRouter
+	) {
 		nonfungiblePositionManager = _nonfungiblePositionManager;
+		swapRouter = _swapRouter;
+
 		_owner = msg.sender;
+		tickSpacingFeeAmount[10] = 500;
+		tickSpacingFeeAmount[60] = 3000;
+		tickSpacingFeeAmount[200] = 10000;
 	}
 
 	// Implementing `onERC721Received` so this contract can receive custody of erc721 tokens
@@ -69,6 +90,7 @@ contract ProviderLiquidity is IERC721Receiver {
 			token0: token0,
 			token1: token1
 		});
+		emit createDeposit(owner, tokenId);
 	}
 
 	/// @notice Calls the mint function defined in periphery, mints the same amount of each token.
@@ -86,7 +108,7 @@ contract ProviderLiquidity is IERC721Receiver {
 		uint256 amount0ToMint,
 		uint256 amount1ToMint
 	)
-		internal
+		public
 		returns (
 			uint256 tokenId,
 			uint128 liquidity,
@@ -109,23 +131,21 @@ contract ProviderLiquidity is IERC721Receiver {
 			address(nonfungiblePositionManager),
 			type(uint256).max / 2
 		);
-
 		INonfungiblePositionManager.MintParams
 			memory params = INonfungiblePositionManager.MintParams({
 				token0: token0,
 				token1: token1,
-				fee: poolFee,
+				fee: tickSpacingFeeAmount[tickSpacing],
 				tickLower: tickLower,
 				tickUpper: tickUpper,
 				amount0Desired: amount0ToMint,
 				amount1Desired: amount1ToMint,
 				amount0Min: 0,
 				amount1Min: 0,
-				recipient: _owner,
+				recipient: address(this),
 				deadline: block.timestamp + 1 days
 			});
 
-		// Note that the pool defined by DAI/USDC and fee tier 0.3% must already be created and initialized in order to mint
 		(tokenId, liquidity, amount0, amount1) = nonfungiblePositionManager.mint(
 			params
 		);
@@ -184,27 +204,40 @@ contract ProviderLiquidity is IERC721Receiver {
 	/// @param tokenId The id of the erc721 token
 	/// @return amount0 The amount received back in token0
 	/// @return amount1 The amount returned back in token1
+
 	function decreaseLiquidityInHalf(
 		uint256 tokenId
 	) external returns (uint256 amount0, uint256 amount1) {
+		decreaseLiquidity(tokenId, deposits[tokenId].liquidity / 2);
+	}
+
+	function decreaseLiquidityFull(
+		uint256 tokenId
+	) external returns (uint256 amount0, uint256 amount1) {
+		decreaseLiquidity(tokenId, deposits[tokenId].liquidity);
+	}
+	function decreaseLiquidity(
+		uint256 tokenId,
+		uint128 liquidity
+	) internal returns (uint256 amount0, uint256 amount1) {
 		// caller must be the owner of the NFT
 		require(msg.sender == deposits[tokenId].owner, "Not the owner");
-		// get liquidity data for tokenId
-		uint128 liquidity = deposits[tokenId].liquidity;
-		uint128 halfLiquidity = liquidity / 2;
+		require(liquidity > 0, "Liquidity must be greater than 0");
+		require(liquidity <= deposits[tokenId].liquidity, "Liquidity too high");
 
 		// amount0Min and amount1Min are price slippage checks
 		// if the amount received after burning is not greater than these minimums, transaction will fail
 		INonfungiblePositionManager.DecreaseLiquidityParams
 			memory params = INonfungiblePositionManager.DecreaseLiquidityParams({
 				tokenId: tokenId,
-				liquidity: halfLiquidity,
+				liquidity: liquidity,
 				amount0Min: 0,
 				amount1Min: 0,
 				deadline: block.timestamp
 			});
 
 		(amount0, amount1) = nonfungiblePositionManager.decreaseLiquidity(params);
+		deposits[tokenId].liquidity -= (liquidity);
 
 		//send liquidity back to owner
 		_sendToOwner(tokenId, amount0, amount1);
@@ -220,19 +253,6 @@ contract ProviderLiquidity is IERC721Receiver {
 		uint256 amountAdd0,
 		uint256 amountAdd1
 	) external returns (uint128 liquidity, uint256 amount0, uint256 amount1) {
-		TransferHelper.safeTransferFrom(
-			deposits[tokenId].token0,
-			msg.sender,
-			address(this),
-			amountAdd0
-		);
-		TransferHelper.safeTransferFrom(
-			deposits[tokenId].token1,
-			msg.sender,
-			address(this),
-			amountAdd1
-		);
-
 		TransferHelper.safeApprove(
 			deposits[tokenId].token0,
 			address(nonfungiblePositionManager),
@@ -243,7 +263,7 @@ contract ProviderLiquidity is IERC721Receiver {
 			address(nonfungiblePositionManager),
 			amountAdd1
 		);
-
+		console.log("increaseLiquidityCurrentRange");
 		INonfungiblePositionManager.IncreaseLiquidityParams
 			memory params = INonfungiblePositionManager.IncreaseLiquidityParams({
 				tokenId: tokenId,
@@ -291,4 +311,42 @@ contract ProviderLiquidity is IERC721Receiver {
 		//remove information related to tokenId
 		delete deposits[tokenId];
 	}
+
+	function swapToken(
+		address tokenIn,
+		address tokenOut,
+		uint256 amountIn,
+		uint24 fee
+	) external returns (uint256 amountOut) {
+		// Transfer the specified amount of tokenIn to this contract.
+		TransferHelper.safeTransferFrom(tokenIn, msg.sender, address(this), amountIn);
+		// Approve the router to spend tokenIn.
+		TransferHelper.safeApprove(tokenIn, address(swapRouter), amountIn);
+		console.log("Approve the router to spend TokenIn: ", amountIn);
+		// Note: To use this example, you should explicitly set slippage limits, omitting for simplicity
+		uint256 minOut = /* Calculate min output */ 0;
+		uint160 priceLimit = /* Calculate price limit */ 0;
+		// Create the params that will be used to execute the swap
+		ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
+			.ExactInputSingleParams({
+				tokenIn: tokenIn,
+				tokenOut: tokenOut,
+				fee: fee,
+				recipient: msg.sender,
+				deadline: block.timestamp,
+				amountIn: amountIn,
+				amountOutMinimum: minOut,
+				sqrtPriceLimitX96: priceLimit
+			});
+		// The call to `exactInputSingle` executes the swap.
+		amountOut = swapRouter.exactInputSingle(params);
+	}
+
+	/* 提取token */
+	function getToken(address token0) external {
+		require(msg.sender == _owner, "Not Owner!");
+		uint256 amount = IERC20(token0).balanceOf(address(this));
+		TransferHelper.safeTransfer(token0, _owner, amount);
+	}
+	receive() external payable {}
 }
