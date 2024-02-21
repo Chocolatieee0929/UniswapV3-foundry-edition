@@ -9,14 +9,16 @@ import { TransferHelper } from "contracts/v3-periphery/libraries/TransferHelper.
 import { INonfungiblePositionManager } from "contracts/v3-periphery/interfaces/INonfungiblePositionManager.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "test/utils/LiquidityAmount.sol";
 
 import "test/utils/TickHelper.sol";
+
 import { encodePriceSqrt } from "test/utils/Math.sol";
 import { TransferHelper } from "contracts/v3-periphery/libraries/TransferHelper.sol";
 
 import { ProviderLiquidity } from "src/ProviderLiquidity.sol";
 
-/* 通过ProviderLiquidity.sol进行测试 */
+/* 通过v3-periphery以及ProviderLiquidity.sol进行测试 */
 
 contract SimpleSwapTest is BaseDeploy {
 	/*  State varies */
@@ -59,8 +61,77 @@ contract SimpleSwapTest is BaseDeploy {
 			type(uint256).max / 5
 		);
 
-		// 给user转tokens[1]进行测试
-		IERC20(tokens[1]).transfer(user, 10000);
+		IERC20(tokens[1]).transfer(user, type(uint256).max / 5);
+
+		vm.stopPrank();
+	}
+
+	/* 无法自由添加边界条件,为了探究报错原因，接下来会使用core合约进行部署和测试 */
+	/// forge-config: default.fuzz.runs = 100
+	function test_fuzz_MintNewPosition(
+		int24 tickLower,
+		int24 tickUpper,
+		uint128 liquidity
+	) internal {
+		/* "INIT_PRICE", -6932
+		 * -887271 887271
+		 */
+		// int24 currentTick = getTick(INIT_PRICE);
+		vm.assume(
+			tickLower >= TickMath.MIN_TICK &&
+				tickUpper <= TickMath.MAX_TICK &&
+				tickLower < getTick(INIT_PRICE) &&
+				getTick(INIT_PRICE) < tickUpper &&
+				liquidity > 100
+		);
+
+		uint160 sqrtRatioAX96 = getSqrtRatioAtTick(tickLower);
+		uint160 sqrtRatioBX96 = getSqrtRatioAtTick(tickUpper);
+		(uint256 amount0ToMint, uint256 amount1ToMint) = getAmountsForLiquidity(
+			INIT_PRICE,
+			sqrtRatioAX96,
+			sqrtRatioBX96,
+			liquidity
+		);
+		console2.log("tickLower:", tickLower);
+		console2.log("tickUpper:", tickUpper);
+		console2.log("liquidity:", uint256(liquidity));
+		console2.log("amount0ToMint:", amount0ToMint);
+		console2.log("amount1ToMint:", amount1ToMint);
+
+		vm.startPrank(deployer);
+		if (amount0ToMint == 0 || amount1ToMint == 0) {
+			vm.expectRevert();
+			(
+				uint256 tokenId,
+				uint128 newLiquidity,
+				uint256 amount0,
+				uint256 amount1
+			) = providerLiquidity.mintNewPosition(
+					tokens[1],
+					tokens[2],
+					TICK_MEDIUM,
+					tickLower,
+					tickUpper,
+					amount0ToMint,
+					amount1ToMint
+				);
+			return;
+		}
+		(
+			uint256 tokenId,
+			uint128 newLiquidity,
+			uint256 amount0,
+			uint256 amount1
+		) = providerLiquidity.mintNewPosition(
+				tokens[1],
+				tokens[2],
+				TICK_MEDIUM,
+				tickLower,
+				tickUpper,
+				amount0ToMint,
+				amount1ToMint
+			);
 		vm.stopPrank();
 	}
 
@@ -153,6 +224,7 @@ contract SimpleSwapTest is BaseDeploy {
 		vm.assume(amountIn > 0 && amountIn < 10000);
 
 		(uint256 tokenId, uint128 liquidity0) = mintSimplePosition();
+
 		vm.startPrank(user);
 		IERC20(tokens[1]).approve(address(providerLiquidity), amountIn);
 		uint256 amountOut = providerLiquidity.swapToken(
@@ -165,31 +237,6 @@ contract SimpleSwapTest is BaseDeploy {
 			assert(amountOut != 0);
 		}
 	}
-
-	/* 通过price设置价格边界进行测试，暂未解决 */
-	/* function test_mintNewPosition() public {
-		vm.startPrank(deployer);
-		uint160 lowerPrice = encodePriceSqrt(1, 4);
-		uint160 upperPrice = encodePriceSqrt(6, 2);
-		uint256 amount0ToMint = 1000000;
-		uint256 amount1ToMint = 1000000;
-		(
-			uint256 tokenId,
-			uint128 liquidity,
-			uint256 amount0,
-			uint256 amount1
-		) = mintNewPositionByPrice(
-				tokens[1],
-				tokens[2],
-				TICK_LOW,
-				lowerPrice,
-				upperPrice,
-				amount0ToMint,
-				amount1ToMint
-			);
-		console2.log("tokenId", tokenId);
-		vm.stopPrank();
-	} */
 
 	function test_mintNewPosition_fail() public {}
 
@@ -222,39 +269,9 @@ contract SimpleSwapTest is BaseDeploy {
 				amount0ToMint,
 				amount1ToMint
 			);
+		console2.log("tickLower", getMinTick(TICK_LOW));
+		console2.log("tickUpper", getMaxTick(TICK_LOW));
+		console2.log("INIT_PRICE", getTick(INIT_PRICE));
 		return (tokenId, liquidity);
-	}
-
-	function mintNewPositionByPrice(
-		address token0,
-		address token1,
-		int24 tickSpacing,
-		uint160 lowerPrice,
-		uint160 upperPrice,
-		uint256 amount0ToMint,
-		uint256 amount1ToMint
-	)
-		internal
-		returns (
-			uint256 tokenId,
-			uint128 liquidity,
-			uint256 amount0,
-			uint256 amount1
-		)
-	{
-		// 转tick
-		int24 tickLower = getTick(lowerPrice);
-		int24 tickUpper = getTick(upperPrice);
-
-		return
-			providerLiquidity.mintNewPosition(
-				tokens[1],
-				tokens[2],
-				tickSpacing,
-				tickLower,
-				tickUpper,
-				amount0ToMint,
-				amount1ToMint
-			);
 	}
 }
