@@ -16,6 +16,7 @@ import "test/utils/Path.sol";
 import { encodePriceSqrt } from "test/utils/Math.sol";
 import { TransferHelper } from "contracts/v3-periphery/libraries/TransferHelper.sol";
 
+/*通过 v3-periphery 创建合约*/
 contract SwapRouterTest is BaseDeploy {
 	/*  State varies */
 	address public pool1;
@@ -39,10 +40,18 @@ contract SwapRouterTest is BaseDeploy {
 		super.setUp();
 		vm.startPrank(deployer);
 
-		// 针对tokens[1],toekns[2] 创建3个池子
-		pool1 = mintNewPool(tokens[1], tokens[2], FEE_LOW, INIT_PRICE);
+		// 创建费率为FEE_MEDIUM的池子
+		pool1 = mintNewPool(tokens[0], tokens[1], FEE_MEDIUM, INIT_PRICE);
 		pool2 = mintNewPool(tokens[1], tokens[2], FEE_MEDIUM, INIT_PRICE);
-		pool3 = mintNewPool(tokens[1], tokens[2], FEE_HIGH, INIT_PRICE);
+
+		mintNewPosition(
+			tokens[0],
+			tokens[1],
+			getMinTick(TICK_MEDIUM),
+			getMaxTick(TICK_MEDIUM),
+			10000,
+			10000
+		);
 
 		mintNewPosition(
 			tokens[1],
@@ -67,38 +76,53 @@ contract SwapRouterTest is BaseDeploy {
 		/////////////////////////////////////////////////////////
 		////	Error：vm.startBroadcast(deployer)未生效！！！	//
 		/////////////////////////////////////////////////////////
-
-		vm.startBroadcast(deployer);
-		console2.log("deployer",deployer);
-		console2.log("msg.sender",msg.sender);
-		console2.log("this", address(this));
+		vm.startPrank(deployer);
 		uint amountOut = swapExactInputSingleHop(token1, token2, FEE_MEDIUM, 3);
 
-		uint256 token1PoolAfter = IERC20(token1).balanceOf(pool1);
+		uint256 token1PoolAfter = IERC20(token1).balanceOf(pool2);
 		uint256 token1DeployerAfter = IERC20(token1).balanceOf(deployer);
-		require(token1DeployerAfter == token1DeployerBefore - 3);
-		require(token1PoolAfter == token1PoolBefore + 3);
 
+		console2.log("token1DeployerBefore:", token1DeployerBefore);
+		console2.log("token1DeployerAfter :", token1DeployerAfter);
+
+		require(
+			token1DeployerAfter == token1DeployerBefore - 3,
+			"token1Deployer Error"
+		);
+		require(token1PoolAfter == token1PoolBefore + 3, "token1Pool Error");
+		vm.stopPrank();
 	}
 
-	function test_TwoToOne() internal {
-		// address pool = factory.getPool(
-		// 	address(tokens[1]),
-		// 	address(tokens[0]),
-		// 	FEE_MEDIUM
-		// );
-		// Balances memory poolBefore = getBalances(pool);
-		// Balances memory deployerBefore = getBalances(deployer);
-		// address[] memory _tokens = new address[](2);
-		// _tokens[0] = address(tokens[1]);
-		// _tokens[1] = address(tokens[0]);
-		// exactInput(_tokens, 3, 1);
-		// Balances memory poolAfter = getBalances(pool);
-		// Balances memory deployerAfter = getBalances(deployer);
-		// require(deployerAfter.token0 == deployerBefore.token0 + 1);
-		// require(deployerAfter.token1 == deployerBefore.token1 - 3);
-		// require(poolAfter.token0 == poolBefore.token0 - 1);
-		// require(poolAfter.token1 == poolBefore.token1 + 3);
+	/* 测试多池子的swapExactTokensForTokens功能。*/
+	function test_ZeroToOneToTwo() public {
+		uint256 token0DeployerBefore = IERC20(tokens[0]).balanceOf(deployer);
+		uint256 token2DeployerBefore = IERC20(tokens[2]).balanceOf(deployer);
+		uint256 token1DeployerBefore = IERC20(tokens[1]).balanceOf(deployer);
+
+		address[] memory m_tokens = new address[](3);
+		m_tokens[0] = address(tokens[0]);
+		m_tokens[1] = address(tokens[1]);
+		m_tokens[2] = address(tokens[2]);
+
+		uint24[] memory m_fees = new uint24[](2);
+		m_fees[0] = FEE_MEDIUM;
+		m_fees[1] = FEE_MEDIUM;
+
+		bytes memory path = encodePath(m_tokens, m_fees);
+
+		vm.startPrank(deployer);
+		uint256 amountIn = 5;
+		// IERC20(m_tokens[0]).transfer(address(this), amountIn);
+		swapExactInputMultiHop(path, m_tokens[0], amountIn);
+
+		uint256 token0DeployerAfter = IERC20(tokens[0]).balanceOf(deployer);
+		uint256 token2DeployerAfter = IERC20(tokens[2]).balanceOf(deployer);
+
+		require(
+			token0DeployerAfter == token0DeployerBefore - 5,
+			"token0Deployer error"
+		);
+		require(token2DeployerAfter > token2DeployerBefore, "token2Deployer error");
 	}
 
 	function mintNewPool(
@@ -107,6 +131,7 @@ contract SwapRouterTest is BaseDeploy {
 		uint24 fee,
 		uint160 currentPrice
 	) internal returns (address) {
+		(token0, token1) = token0 < token1 ? (token0, token1) : (token1, token0);
 		/* 创建池子 */
 		return
 			nonfungiblePositionManager.createAndInitializePoolIfNecessary(
@@ -126,6 +151,7 @@ contract SwapRouterTest is BaseDeploy {
 		uint256 amount0ToMint,
 		uint256 amount1ToMint
 	) internal {
+		(token0, token1) = token0 < token1 ? (token0, token1) : (token1, token0);
 		INonfungiblePositionManager.MintParams
 			memory liquidityParams = INonfungiblePositionManager.MintParams({
 				token0: token0,
@@ -150,9 +176,7 @@ contract SwapRouterTest is BaseDeploy {
 		uint24 fee,
 		uint amountIn
 	) internal returns (uint amountOut) {
-		console2.log(msg.sender);
-
-		IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
+		// IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
 		IERC20(tokenIn).approve(address(swapRouter), amountIn);
 
 		ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
@@ -168,5 +192,23 @@ contract SwapRouterTest is BaseDeploy {
 			});
 
 		amountOut = swapRouter.exactInputSingle(params);
+	}
+
+	function swapExactInputMultiHop(
+		bytes memory path,
+		address tokenIn,
+		uint amountIn
+	) internal returns (uint amountOut) {
+		// IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
+		IERC20(tokenIn).approve(address(swapRouter), amountIn);
+
+		ISwapRouter.ExactInputParams memory params = ISwapRouter.ExactInputParams({
+			path: path,
+			recipient: deployer, // 正常情况下应该是msg.sender
+			deadline: block.timestamp,
+			amountIn: amountIn,
+			amountOutMinimum: 0
+		});
+		amountOut = swapRouter.exactInput(params);
 	}
 }
