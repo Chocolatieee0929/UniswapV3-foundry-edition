@@ -64,6 +64,10 @@ contract SwapRouterTest is BaseDeploy {
 		uint256 token1PoolBefore = IERC20(token1).balanceOf(pool2);
 		uint256 token1DeployerBefore = IERC20(token1).balanceOf(deployer);
 
+		/////////////////////////////////////////////////////////
+		////	Error：vm.startBroadcast(deployer)未生效！！！	//
+		/////////////////////////////////////////////////////////
+
 		vm.startBroadcast(deployer);
 		console2.log("deployer",deployer);
 		console2.log("msg.sender",msg.sender);
