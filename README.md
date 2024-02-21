@@ -25,7 +25,7 @@ periphery 存放的是外围合约，这些合约是给用户和开发者一个�
 
 ## 2. 使用 Foundry 部署
 
-## 使用 Foundry 框架部署 UniswapV3
+## 使用 v3-periphery 部署 UniswapV3
 
 - 具体的代码在`test/utils/BaseDeploy.sol:setUp`
 
@@ -130,3 +130,58 @@ revert:stdstorage find(stdstorage): Slot(s)not found
 Failing tests:
 Encountered 1 failing test in test/SimpleSwap.t.sol:SimpleSwapTest[FAIL. Reason: setup failed: revert: stdstorage find(stdstorage): slot(s) not found.] setUp()(gas: 0)
 ```
+
+#### mint position 的边界情况
+
+1. `tickLow` 和 `tickUpper`未被 `tickSpacing`整除
+
+```solidity
+// contracts/v3-core/libraries/TickBitmap.sol
+function flipTick(...) internal {
+@>	require(tick % tickSpacing == 0); // ensure that the tick is spaced
+	(int16 wordPos, uint8 bitPos) = position(tick / tickSpacing);
+	uint256 mask = 1 << bitPos;
+	self[wordPos] ^= mask;
+}
+```
+
+2. 流动性溢出
+
+```solidity
+// contracts/v3-core/libraries/Tick.sol:Tick.update:
+function update(...) internal returns (bool flipped) {
+        ...
+        uint128 liquidityGrossBefore = info.liquidityGross;
+        uint128 liquidityGrossAfter = LiquidityMath.addDelta(liquidityGrossBefore, liquidityDelta);
+
+@>      require(liquidityGrossAfter <= maxLiquidity, 'LO');
+		...
+}
+```
+错误信息如下，
+```shell
+[65528] core_SimpleSwapTest::test_fuzz_core_MintNewPosition(-14010 [-1.401e4], 138730 [1.387e5], 1917569901783203986719870431556010 [1.917e33])
+    ├─ [0] VM::assume(true) [staticcall]
+    │   └─ ← ()
+    ├─ [0] console::log("tickLower:", -14010 [-1.401e4]) [staticcall]
+    │   └─ ← ()
+    ├─ [0] console::log("tickUpper:", 138730 [1.387e5]) [staticcall]
+    │   └─ ← ()
+    ├─ [0] console::log("liquidity:", 1917569901783203986719870431556010 [1.917e33]) [staticcall]
+    │   └─ ← ()
+    ├─ [0] console::log("amount0ToMint:", 2709989481056669618208985953403326 [2.709e33]) [staticcall]
+    │   └─ ← ()
+    ├─ [0] console::log("amount1ToMint:", 404132314446474599733383343501835 [4.041e32]) [staticcall]
+    │   └─ ← ()
+    ├─ [2666] UniswapV3Factory::getPool(TestERC20: [0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0], TestERC20: [0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9], 500) [staticcall]
+    │   └─ ← UniswapV3Pool: [0x48D5A48818b36843Ed03EE7217C9a2F911667FAe]
+    ├─ [2696] UniswapV3Pool::slot0() [staticcall]
+    │   └─ ← 56022770974786139918731938227 [5.602e28], -6932, 0, 1, 1, 0, true
+    ├─ [16894] UniswapV3Pool::mint(DefaultSender: [0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38], -14010 [-1.401e4], 138730 [1.387e5], 1917569901783203986719870431555991 [1.917e33], 0x0000000000000000000000009fe46736679d2d9a65f0992f2272de9f3c7fa6e0000000000000000000000000cf7ed3acca5a467e9e704c703e8d87f634fb0fc900000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266)
+    │   └─ ← revert: LO
+    └─ ← revert: LO
+```
+
+1.
+
+## 使用 v3-core 部署 UniswapV3
