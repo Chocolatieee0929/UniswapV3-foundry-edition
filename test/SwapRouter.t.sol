@@ -13,6 +13,8 @@ import "contracts/v3-periphery/interfaces/ISwapRouter.sol";
 
 import "test/utils/TickHelper.sol";
 import "test/utils/Path.sol";
+import "test/utils/LiquidityAmount.sol";
+
 import { encodePriceSqrt } from "test/utils/Math.sol";
 import { TransferHelper } from "contracts/v3-periphery/libraries/TransferHelper.sol";
 
@@ -47,21 +49,88 @@ contract SwapRouterTest is BaseDeploy {
 		mintNewPosition(
 			tokens[0],
 			tokens[1],
+			FEE_MEDIUM,
 			getMinTick(TICK_MEDIUM),
 			getMaxTick(TICK_MEDIUM),
 			10000,
 			10000
 		);
 
+		// mintNewPosition(
+		// 	tokens[1],
+		// 	tokens[2],
+		// 	FEE_MEDIUM,
+		// 	getMinTick(TICK_MEDIUM),
+		// 	getMaxTick(TICK_MEDIUM),
+		// 	10000,
+		// 	10000
+		// );
+
+		vm.stopPrank();
+	}
+
+	/* 测试tick边界情况 */
+	/// forge-config: default.fuzz.runs = 1000
+	function test_fuzz_MintNewPosition(
+		int24 tickLower,
+		int24 tickUpper,
+		uint128 liquidity
+	) external {
+		/* "INIT_PRICE", -6932
+		 * -887271 887271
+		 */
+		// int24 currentTick = getTick(INIT_PRICE);
+		vm.assume(
+			tickLower >= TickMath.MIN_TICK &&
+				tickUpper <= TickMath.MAX_TICK &&
+				tickLower < getTick(INIT_PRICE) &&
+				getTick(INIT_PRICE) < tickUpper &&
+				liquidity > 0
+		);
+
+		uint160 sqrtRatioAX96 = getSqrtRatioAtTick(tickLower);
+		uint160 sqrtRatioBX96 = getSqrtRatioAtTick(tickUpper);
+		(uint256 amount0ToMint, uint256 amount1ToMint) = getAmountsForLiquidity(
+			INIT_PRICE,
+			sqrtRatioAX96,
+			sqrtRatioBX96,
+			liquidity
+		);
+		console2.log("tickLower:", tickLower);
+		console2.log("tickUpper:", tickUpper);
+		console2.log("liquidity:", uint256(liquidity));
+		console2.log("amount0ToMint:", amount0ToMint);
+		console2.log("amount1ToMint:", amount1ToMint);
+
+		vm.startPrank(deployer);
+
+		if (
+			amount0ToMint == 0 ||
+			amount1ToMint == 0 ||
+			tickLower % TICK_MEDIUM != 0 ||
+			tickUpper % TICK_MEDIUM != 0
+		) {
+			vm.expectRevert();
+			mintNewPosition(
+				tokens[1],
+				tokens[2],
+				FEE_MEDIUM,
+				tickLower,
+				tickUpper,
+				amount0ToMint,
+				amount1ToMint
+			);
+			return;
+		}
 		mintNewPosition(
 			tokens[1],
 			tokens[2],
-			getMinTick(TICK_MEDIUM),
-			getMaxTick(TICK_MEDIUM),
-			10000,
-			10000
+			FEE_MEDIUM,
+			tickLower,
+			tickUpper,
+			amount0ToMint,
+			amount1ToMint
 		);
-
 		vm.stopPrank();
 	}
 
@@ -145,7 +214,7 @@ contract SwapRouterTest is BaseDeploy {
 	function mintNewPosition(
 		address token0,
 		address token1,
-		// int24 tickSpacing,
+		uint24 fee,
 		int24 tickLower,
 		int24 tickUpper,
 		uint256 amount0ToMint,
@@ -156,7 +225,7 @@ contract SwapRouterTest is BaseDeploy {
 			memory liquidityParams = INonfungiblePositionManager.MintParams({
 				token0: token0,
 				token1: token1,
-				fee: FEE_MEDIUM,
+				fee: fee,
 				tickLower: tickLower,
 				tickUpper: tickUpper,
 				recipient: deployer,
