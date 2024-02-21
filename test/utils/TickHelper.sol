@@ -1,6 +1,7 @@
 pragma solidity =0.7.6;
 
-import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
+import "contracts/v3-core/libraries/TickMath.sol";
+import "contracts/v3-core/libraries/Tick.sol";
 
 uint24 constant FEE_LOW = 500;
 uint24 constant FEE_MEDIUM = 3000;
@@ -34,4 +35,10 @@ function getTick(uint160 sqrtPriceX96) pure returns (int24) {
 
 function getSqrtRatioAtTick(int24 tick) pure returns (uint160) {
 	return TickMath.getSqrtRatioAtTick(tick);
+}
+
+function tickSpacingToMaxLiquidityPerTick(
+	int24 tickSpacing
+) pure returns (uint128) {
+	return Tick.tickSpacingToMaxLiquidityPerTick(tickSpacing);
 }
