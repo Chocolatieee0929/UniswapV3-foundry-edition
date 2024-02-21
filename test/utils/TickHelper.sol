@@ -24,5 +24,14 @@ function getMaxTick(int24 tickSpacing) pure returns (int24) {
 }
 
 function getTick(uint160 sqrtPriceX96) pure returns (int24) {
-	return TickMath.getTickAtSqrtRatio(sqrtPriceX96);
+	int24 tick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
+	require(
+		TickMath.MIN_TICK <= tick && tick < TickMath.MAX_TICK,
+		"Tick out of bounds "
+	);
+	return tick;
+}
+
+function getSqrtRatioAtTick(int24 tick) pure returns (uint160) {
+	return TickMath.getSqrtRatioAtTick(tick);
 }
