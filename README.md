@@ -70,3 +70,63 @@ string constant weth9Artifact = "test/utils/WETH9.json";
 			currentPrice
 		);
 ```
+
+实际上，每一对 token 最多只有 3 个池子合约，因为交易费率`fee`只有三个选择，poolFactory 合约参数如下：
+
+```solidity
+feeAmountTickSpacing[500] = 10;
+feeAmountTickSpacing[3000] = 60;
+feeAmountTickSpacing[10000] = 200;
+```
+
+### 3. 通过 mint position 来提供 uniswap pool 流动性
+
+在这需要注意的是，mintPosition 方法会调用`NonfungiblePositionManager.mint`方法来提供流动性，在调用`mint`之前需要保证对应的池子合约已经存在，
+
+```solidity
+/// @notice Add liquidity to an initialized pool
+    contracts/v3-periphery/base/LiquidityManagement.sol：
+    function addLiquidity(
+    	AddLiquidityParams memory params
+    )
+    	internal
+    	returns (
+    		uint128 liquidity,
+    		uint256 amount0,
+    		uint256 amount1,
+    		IUniswapV3Pool pool
+    	)
+    {
+@>    	PoolAddress.PoolKey memory poolKey = PoolAddress.PoolKey({
+    		token0: params.token0,
+    		token1: params.token1,
+    		fee: params.fee
+    	});
+
+@>     	pool = IUniswapV3Pool(PoolAddress.computeAddress(factory, poolKey));
+
+    	// compute the liquidity amount
+    	{
+    		(uint160 sqrtPriceX96, , , , , , ) = pool.slot0();
+    		uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(params.tickLower);
+    		uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(params.tickUpper);
+
+    		liquidity = LiquidityAmounts.getLiquidityForAmounts(
+    			sqrtPriceX96,
+    			sqrtRatioAX96,
+    			sqrtRatioBX96,
+    			params.amount0Desired,
+    			params.amount1Desired
+    		);
+    	}
+    }
+```
+
+这块可以很明显地看到，`addLiquidity`方法会调用`PoolAddress.computeAddress`方法来获取池子的地址，然后通过`IUniswapV3Pool`来调用`mint`方法来提供流动性，如果使用 core 合约部署 poolFactory 合约，可能会出现`pool`地址不一致的情况。
+
+```shell
+revert:stdstorage find(stdstorage): Slot(s)not found
+
+Failing tests:
+Encountered 1 failing test in test/SimpleSwap.t.sol:SimpleSwapTest[FAIL. Reason: setup failed: revert: stdstorage find(stdstorage): slot(s) not found.] setUp()(gas: 0)
+```
