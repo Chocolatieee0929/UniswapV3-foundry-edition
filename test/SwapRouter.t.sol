@@ -25,16 +25,6 @@ contract SwapRouterTest is BaseDeploy {
 	address public pool2;
 	address public pool3;
 
-	struct Deposit {
-		address owner;
-		uint128 liquidity;
-		address token0;
-		address token1;
-	}
-
-	/// @dev deposits[tokenId] => Deposit
-	mapping(uint256 => Deposit) public deposits;
-
 	/* 
     初始化：建立好一个测试环境，包括部署池子工厂合约，创建测试代币，创建测试账户等。
      */
@@ -56,15 +46,15 @@ contract SwapRouterTest is BaseDeploy {
 			10000
 		);
 
-		// mintNewPosition(
-		// 	tokens[1],
-		// 	tokens[2],
-		// 	FEE_MEDIUM,
-		// 	getMinTick(TICK_MEDIUM),
-		// 	getMaxTick(TICK_MEDIUM),
-		// 	10000,
-		// 	10000
-		// );
+		mintNewPosition(
+			tokens[1],
+			tokens[2],
+			FEE_MEDIUM,
+			getMinTick(TICK_MEDIUM),
+			getMaxTick(TICK_MEDIUM),
+			10000,
+			10000
+		);
 
 		vm.stopPrank();
 	}
@@ -96,15 +86,13 @@ contract SwapRouterTest is BaseDeploy {
 			sqrtRatioBX96,
 			liquidity
 		);
-		console2.log("tickLower:", tickLower);
-		console2.log("tickUpper:", tickUpper);
-		console2.log("liquidity:", uint256(liquidity));
-		console2.log("amount0ToMint:", amount0ToMint);
-		console2.log("amount1ToMint:", amount1ToMint);
+		
+		uint128 liquiditymax = tickSpacingToMaxLiquidityPerTick(TICK_LOW);
 
 		vm.startPrank(deployer);
 
 		if (
+			liquidity > liquiditymax ||
 			amount0ToMint == 0 ||
 			amount1ToMint == 0 ||
 			tickLower % TICK_MEDIUM != 0 ||
@@ -142,9 +130,6 @@ contract SwapRouterTest is BaseDeploy {
 		uint256 token1PoolBefore = IERC20(token1).balanceOf(pool2);
 		uint256 token1DeployerBefore = IERC20(token1).balanceOf(deployer);
 
-		/////////////////////////////////////////////////////////
-		////	Error：vm.startBroadcast(deployer)未生效！！！	//
-		/////////////////////////////////////////////////////////
 		vm.startPrank(deployer);
 		uint amountOut = swapExactInputSingleHop(token1, token2, FEE_MEDIUM, 3);
 
@@ -194,51 +179,7 @@ contract SwapRouterTest is BaseDeploy {
 		require(token2DeployerAfter > token2DeployerBefore, "token2Deployer error");
 	}
 
-	function mintNewPool(
-		address token0,
-		address token1,
-		uint24 fee,
-		uint160 currentPrice
-	) internal returns (address) {
-		(token0, token1) = token0 < token1 ? (token0, token1) : (token1, token0);
-		/* 创建池子 */
-		return
-			nonfungiblePositionManager.createAndInitializePoolIfNecessary(
-				token0,
-				token1,
-				fee,
-				currentPrice
-			);
-	}
-
-	function mintNewPosition(
-		address token0,
-		address token1,
-		uint24 fee,
-		int24 tickLower,
-		int24 tickUpper,
-		uint256 amount0ToMint,
-		uint256 amount1ToMint
-	) internal {
-		(token0, token1) = token0 < token1 ? (token0, token1) : (token1, token0);
-		INonfungiblePositionManager.MintParams
-			memory liquidityParams = INonfungiblePositionManager.MintParams({
-				token0: token0,
-				token1: token1,
-				fee: fee,
-				tickLower: tickLower,
-				tickUpper: tickUpper,
-				recipient: deployer,
-				amount0Desired: amount0ToMint,
-				amount1Desired: amount1ToMint,
-				amount0Min: 0,
-				amount1Min: 0,
-				deadline: 1
-			});
-
-		nonfungiblePositionManager.mint(liquidityParams);
-	}
-
+	/* function */
 	function swapExactInputSingleHop(
 		address tokenIn,
 		address tokenOut,

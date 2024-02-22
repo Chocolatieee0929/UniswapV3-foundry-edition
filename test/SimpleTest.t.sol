@@ -66,7 +66,6 @@ contract SimpleSwapTest is BaseDeploy {
 		vm.stopPrank();
 	}
 
-
 	/* 简单测试 tick边界测试的是max & min*/
 	function test_simpleMintNewPosition() public {
 		uint256 amount0ToMint = 10000;
@@ -177,9 +176,9 @@ contract SimpleSwapTest is BaseDeploy {
 		address token1,
 		uint24 fee,
 		uint160 currentPrice
-	) internal {
+	) internal override returns (address){
 		/* 创建池子 */
-		nonfungiblePositionManager.createAndInitializePoolIfNecessary(
+		return nonfungiblePositionManager.createAndInitializePoolIfNecessary(
 			token0,
 			token1,
 			fee,
