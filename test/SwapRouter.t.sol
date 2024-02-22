@@ -70,55 +70,40 @@ contract SwapRouterTest is BaseDeploy {
 		 * -887271 887271
 		 */
 		// int24 currentTick = getTick(INIT_PRICE);
-		vm.assume(
-			tickLower >= TickMath.MIN_TICK &&
-				tickUpper <= TickMath.MAX_TICK &&
-				tickLower < getTick(INIT_PRICE) &&
-				getTick(INIT_PRICE) < tickUpper &&
-				liquidity > 0
-		);
+		vm.assume(isValidTick(tickLower, tickUpper) && liquidity > 0);
 
-		uint160 sqrtRatioAX96 = getSqrtRatioAtTick(tickLower);
-		uint160 sqrtRatioBX96 = getSqrtRatioAtTick(tickUpper);
-		(uint256 amount0ToMint, uint256 amount1ToMint) = getAmountsForLiquidity(
-			INIT_PRICE,
-			sqrtRatioAX96,
-			sqrtRatioBX96,
-			liquidity
-		);
-		
-		uint128 liquiditymax = tickSpacingToMaxLiquidityPerTick(TICK_LOW);
+		uint128 liquiditymax = tickSpacingToMaxLiquidityPerTick(TICK_MEDIUM);
 
 		vm.startPrank(deployer);
 
-		if (
-			liquidity > liquiditymax ||
-			amount0ToMint == 0 ||
-			amount1ToMint == 0 ||
-			tickLower % TICK_MEDIUM != 0 ||
-			tickUpper % TICK_MEDIUM != 0
-		) {
+		if (liquidity > liquiditymax) {
 			vm.expectRevert();
-			mintNewPosition(
-				tokens[1],
-				tokens[2],
-				FEE_MEDIUM,
-				tickLower,
-				tickUpper,
-				amount0ToMint,
-				amount1ToMint
-			);
+			mintOneTwoPosition_M(tickLower, tickUpper, liquidity);
+			return;
+		} else if (tickLower % TICK_MEDIUM != 0 || tickUpper % TICK_MEDIUM != 0) {
+			vm.expectRevert();
+			mintOneTwoPosition_M(tickLower, tickUpper, liquidity);
 			return;
 		}
-		mintNewPosition(
-			tokens[1],
-			tokens[2],
-			FEE_MEDIUM,
-			tickLower,
-			tickUpper,
-			amount0ToMint,
-			amount1ToMint
-		);
+		mintOneTwoPosition_M(tickLower, tickUpper, liquidity);
+		vm.stopPrank();
+	}
+
+	/* 测试tick边界情况,失败原因是liquidity越界 */
+	/// forge-config: default.fuzz.runs = 1000
+	function test_fuzz_MintNewPosition_fail_l(
+		int24 tickLower,
+		int24 tickUpper,
+		uint128 liquidity
+	) external {
+		vm.assume(isValidTick(tickLower, tickUpper));
+
+		vm.startPrank(deployer);
+		if (liquidity > tickSpacingToMaxLiquidityPerTick(TICK_MEDIUM)) {
+			vm.expectRevert();
+			mintOneTwoPosition_M(tickLower, tickUpper, liquidity);
+		}
+
 		vm.stopPrank();
 	}
 
@@ -220,5 +205,49 @@ contract SwapRouterTest is BaseDeploy {
 			amountOutMinimum: 0
 		});
 		amountOut = swapRouter.exactInput(params);
+	}
+
+	function mintOneTwoPosition_M(
+		int24 tickLower,
+		int24 tickUpper,
+		uint128 liquidity
+	)
+		internal
+		returns (
+			uint256 tokenId,
+			uint128 _liquidity,
+			uint256 amount0,
+			uint256 amount1
+		)
+	{
+		uint160 sqrtRatioAX96 = getSqrtRatioAtTick(tickLower);
+		uint160 sqrtRatioBX96 = getSqrtRatioAtTick(tickUpper);
+		(uint256 amount0ToMint, uint256 amount1ToMint) = getAmountsForLiquidity(
+			INIT_PRICE,
+			sqrtRatioAX96,
+			sqrtRatioBX96,
+			liquidity
+		);
+
+		return
+			mintNewPosition(
+				tokens[1],
+				tokens[2],
+				FEE_MEDIUM,
+				tickLower,
+				tickUpper,
+				amount0ToMint,
+				amount1ToMint
+			);
+	}
+
+	function isValidTick(
+		int24 tickLower,
+		int24 tickUpper
+	) internal view returns (bool) {
+		return (tickLower >= TickMath.MIN_TICK &&
+			tickUpper <= TickMath.MAX_TICK &&
+			tickLower < getTick(INIT_PRICE) &&
+			getTick(INIT_PRICE) < tickUpper);
 	}
 }
