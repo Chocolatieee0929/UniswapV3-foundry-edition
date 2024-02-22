@@ -9,8 +9,8 @@ import { TransferHelper } from "contracts/v3-periphery/libraries/TransferHelper.
 import { INonfungiblePositionManager } from "contracts/v3-periphery/interfaces/INonfungiblePositionManager.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "test/utils/LiquidityAmount.sol";
 
+import "test/utils/LiquidityAmount.sol";
 import "test/utils/TickHelper.sol";
 
 import { encodePriceSqrt } from "test/utils/Math.sol";
