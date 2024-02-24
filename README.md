@@ -71,7 +71,9 @@ string constant weth9Artifact = "test/utils/WETH9.json";
 		);
 ```
 
-实际上，每一对 token 最多只有 3 个池子合约，因为交易费率`fee`只有三个选择，poolFactory 合约参数如下：
+这一部分值得注意的：
+
+1. 实际上，每一对 token 最多只有 3 个池子合约，因为交易费率`fee`只有三个选择，poolFactory 合约参数如下：
 
 ```solidity
 feeAmountTickSpacing[500] = 10;
@@ -79,42 +81,46 @@ feeAmountTickSpacing[3000] = 60;
 feeAmountTickSpacing[10000] = 200;
 ```
 
+2. 任意用户都能够通过调用`nonfungiblePositionManager.createAndInitializePoolIfNecessary`来创建池子，在`v3-periphery/base/PoolInitializer.sol:createAndInitializePoolIfNecessary`可以看见该函数没有调用者的限制条件，实际上，是由 nonfungiblePositionManager 通过调用`UniswapV3Factory.createPool`来创建并初始化池子。
+
+```
+function createAndInitializePoolIfNecessary(address token0,address token1,uint24 fee,uint160 sqrtPriceX96)
+    external payable override
+    returns (address pool) {
+        ...
+@>          pool = IUniswapV3Factory(factory).createPool(token0, token1, fee);
+@>          IUniswapV3Pool(pool).initialize(sqrtPriceX96);
+        ...
+    }
+```
+
 ### 3. 通过 mint position 来提供 uniswap pool 流动性
 
-在这需要注意的是，mintPosition 方法会调用`NonfungiblePositionManager.mint`方法来提供流动性，在调用`mint`之前需要保证对应的池子合约已经存在，
+在这需要注意的是，mintPosition 方法会调用`NonfungiblePositionManager.mint`方法来提供流动性，在调用`mint`之前需要保证对应的池子合约已经存在，调用的是`v3-periphery/base/LiquidityManagement.sol`的方法
 
 ```solidity
 /// @notice Add liquidity to an initialized pool
-    contracts/v3-periphery/base/LiquidityManagement.sol：
     function addLiquidity(
     	AddLiquidityParams memory params
     )
     	internal
-    	returns (
-    		uint128 liquidity,
-    		uint256 amount0,
-    		uint256 amount1,
-    		IUniswapV3Pool pool
-    	)
+    	returns (uint128 liquidity,uint256 amount0,uint256 amount1,IUniswapV3Pool pool)
     {
-@>    	PoolAddress.PoolKey memory poolKey = PoolAddress.PoolKey({
+           	PoolAddress.PoolKey memory poolKey = PoolAddress.PoolKey({
     		token0: params.token0,
     		token1: params.token1,
     		fee: params.fee
     	});
 
-@>     	pool = IUniswapV3Pool(PoolAddress.computeAddress(factory, poolKey));
-
-    	// compute the liquidity amount
-    	{
-    		(uint160 sqrtPriceX96, , , , , , ) = pool.slot0();
+---    	pool = IUniswapV3Pool(PoolAddress.computeAddress(factory, poolKey));
+|
+|    	// compute the liquidity amount
+|    	{
+--- >    	(uint160 sqrtPriceX96, , , , , , ) = pool.slot0();
     		uint160 sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(params.tickLower);
     		uint160 sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(params.tickUpper);
 
-    		liquidity = LiquidityAmounts.getLiquidityForAmounts(
-    			sqrtPriceX96,
-    			sqrtRatioAX96,
-    			sqrtRatioBX96,
+    		liquidity = LiquidityAmounts.getLiquidityForAmounts(sqrtPriceX96,sqrtRatioAX96,sqrtRatioBX96,
     			params.amount0Desired,
     			params.amount1Desired
     		);
@@ -122,7 +128,7 @@ feeAmountTickSpacing[10000] = 200;
     }
 ```
 
-这块可以很明显地看到，`addLiquidity`方法会调用`PoolAddress.computeAddress`方法来获取池子的地址，然后通过`IUniswapV3Pool`来调用`mint`方法来提供流动性，如果使用 core 合约部署 poolFactory 合约，可能会出现`pool`地址不一致的情况。
+这块可以很明显地看到，`addLiquidity`方法会调用`PoolAddress.computeAddress`方法来获取池子的地址，然后通过`IUniswapV3Pool`来调用`mint`方法来提供流动性，如果使用`poolFactory = new UniswapV3Pool()`来部署，可能会出现`pool`地址不一致的情况。
 
 ```shell
 revert:stdstorage find(stdstorage): Slot(s)not found
@@ -158,7 +164,9 @@ function update(...) internal returns (bool flipped) {
 		...
 }
 ```
+
 错误信息如下，
+
 ```shell
 [65528] core_SimpleSwapTest::test_fuzz_core_MintNewPosition(-14010 [-1.401e4], 138730 [1.387e5], 1917569901783203986719870431556010 [1.917e33])
     ├─ [0] VM::assume(true) [staticcall]
@@ -181,7 +189,3 @@ function update(...) internal returns (bool flipped) {
     │   └─ ← revert: LO
     └─ ← revert: LO
 ```
-
-1.
-
-## 使用 v3-core 部署 UniswapV3

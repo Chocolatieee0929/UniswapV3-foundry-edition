@@ -2,19 +2,17 @@
 pragma solidity ^0.7.6;
 pragma abicoder v2;
 
-import { console2 } from "forge-std/Test.sol";
-import { BaseDeploy } from "test/utils/BaseDeploy.sol";
-
-import { TransferHelper } from "contracts/v3-periphery/libraries/TransferHelper.sol";
 import { INonfungiblePositionManager } from "contracts/v3-periphery/interfaces/INonfungiblePositionManager.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IUniswapV3Pool } from "contracts/v3-core/interfaces/IUniswapV3Pool.sol";
 
-import "test/utils/LiquidityAmount.sol";
-import "test/utils/TickHelper.sol";
-
+import { console2 } from "forge-std/Test.sol";
+import { BaseDeploy } from "test/utils/BaseDeploy.sol";
 import { encodePriceSqrt } from "test/utils/Math.sol";
 import { TransferHelper } from "contracts/v3-periphery/libraries/TransferHelper.sol";
+import "test/utils/LiquidityAmount.sol";
+import "test/utils/TickHelper.sol";
 
 import { ProviderLiquidity } from "src/ProviderLiquidity.sol";
 
@@ -64,6 +62,16 @@ contract SimpleSwapTest is BaseDeploy {
 		IERC20(tokens[1]).transfer(user, type(uint256).max / 5);
 
 		vm.stopPrank();
+	}
+
+	function test_mintPool_NotOwner() public {
+		/* 没有使用nonfungiblePositionManager的身份进行创建pool*/
+		address poolAddress = mintNewPool(
+			tokens[0],
+			tokens[1],
+			FEE_LOW,
+			INIT_PRICE
+		);
 	}
 
 	/* 简单测试 tick边界测试的是max & min*/
@@ -176,14 +184,16 @@ contract SimpleSwapTest is BaseDeploy {
 		address token1,
 		uint24 fee,
 		uint160 currentPrice
-	) internal override returns (address){
+	) internal override returns (address) {
+		(token0, token1) = token0 < token1 ? (token0, token1) : (token1, token0);
 		/* 创建池子 */
-		return nonfungiblePositionManager.createAndInitializePoolIfNecessary(
-			token0,
-			token1,
-			fee,
-			currentPrice
-		);
+		return
+			nonfungiblePositionManager.createAndInitializePoolIfNecessary(
+				token0,
+				token1,
+				fee,
+				currentPrice
+			);
 	}
 	function mintSimplePosition() internal returns (uint256, uint128) {
 		uint256 amount0ToMint = 10000;
