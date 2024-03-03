@@ -56,12 +56,11 @@ string constant weth9Artifact = "test/utils/WETH9.json";
     }
 ```
 
-这块需要注意，UniswapV3Factory 合约通过读取`"node_modules/@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json"`以及`deployCode`来部署，这一步是为了保证通过 poolFactory 部署的 pool 跟 mintPosition 的池子解析的地址一致。
+这块需要注意，UniswapV3Factory 合约通过读取`"node_modules/@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json"`以及`deployCode`来部署，这一步是为了保证通过 poolFactory 部署的 pool 跟 mintPosition 的池子解析的地址一致，为什么会不一致呢，我们后续再分析。
 
 ### 2. 部署 uniswap pool
 
-在这采用的是 v3-periphery 的`createAndInitializePoolIfNecessary`方法来创建 pool，这个方法会调用`createPool`来创建 pool,并对池子进行初始化。pool 合约由交易币对和手续费组成。
-
+在这采用的是 v3-periphery 的`createAndInitializePoolIfNecessary`方法来创建 pool，首先调用工厂合约的`createPool`函数来创建 pool,并对池子进行初始化，pool 合约由交易币对和手续费组成。
 ```solidity
     nonfungiblePositionManager.createAndInitializePoolIfNecessary(
 			token0,
@@ -70,6 +69,64 @@ string constant weth9Artifact = "test/utils/WETH9.json";
 			currentPrice
 		);
 ```
+```
+  function createAndInitializePoolIfNecessary(address token0,address token1,uint24 fee,uint160 sqrtPriceX96)
+      external payable override
+      returns (address pool) {
+          ...
+  @>          pool = IUniswapV3Factory(factory).createPool(token0, token1, fee);
+              IUniswapV3Pool(pool).initialize(sqrtPriceX96);
+          ...
+    }
+```
+我们继续深入研究工厂合约是如何部署pool的，当调用 `createPool`函数时，工厂合约会首先会根据`require(getPool[token0][token1][fee] == address(0))` 判断池子是否存在，不存在才会往下执行，也就是说**交易对的地址以及选择的费率就决定了池子的唯一性**，之后通过 create2 方法进行部署。
+
+```solidity
+    function createPool(
+        address tokenA,
+        address tokenB,
+        uint24 fee
+    ) external override noDelegateCall returns (address pool) {
+        require(tokenA != tokenB);
+        // 默认池子里的token是有序的 --> 盐值计算/zeroForOne
+        (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
+        require(token0 != address(0));
+        int24 tickSpacing = feeAmountTickSpacing[fee];
+        require(tickSpacing != 0);
+        // 避免池子重复
+        require(getPool[token0][token1][fee] == address(0));
+@>      pool = deploy(address(this), token0, token1, fee, tickSpacing);
+        getPool[token0][token1][fee] = pool;
+        // populate mapping in the reverse direction, deliberate choice to avoid the cost of comparing addresses
+        getPool[token1][token0][fee] = pool;
+        emit PoolCreated(token0, token1, fee, tickSpacing, pool);
+    }
+    /// 函数在 contracts/v3-core/UniswapV3PoolDeployer.sol ，工厂合约继承了该合约
+    function deploy(address factory, address token0, address token1, uint24 fee, int24 tickSpacing)
+        internal
+        returns (address pool)
+    {
+        parameters = Parameters({factory: factory, token0: token0, token1: token1, fee: fee, tickSpacing: tickSpacing});
+        // parameters 其实是传给 UniswapV3Pool 的参数
+        pool = address(new UniswapV3Pool{salt: keccak256(abi.encode(token0, token1, fee))}());
+        delete parameters;
+    }
+```
+使用new关键字创建了一个UniswapV3Pool合约的新实例，并使用salt选项指定了一个唯一的盐值。盐值是通过对token0、token1和fee参数进行串联后进行哈希得到的。这个唯一的盐值有助于在使用相似的初始化参数部署多个合约实例时避免碰撞。
+```
+contract UniswapV3Pool {
+    ...
+    constructor() {
+        int24 _tickSpacing;
+        (factory, token0, token1, fee, _tickSpacing) = IUniswapV3PoolDeployer(msg.sender).parameters();
+        tickSpacing = _tickSpacing;
+
+        maxLiquidityPerTick = Tick.tickSpacingToMaxLiquidityPerTick(_tickSpacing);
+    }
+    ...
+}
+```
+UniswapV3Pool合约的构造函数初始化了它的状态变量。它从调用者（即部署者）处获取IUniswapV3PoolDeployer合约返回的parameters结构体中提取了参数，如factory、token0、token1、fee和_tickSpacing。然后，它将合约的tickSpacing变量设置为_tickSpacing。
 
 这一部分值得注意的：
 
@@ -83,16 +140,6 @@ feeAmountTickSpacing[10000] = 200;
 
 2. 任意用户都能够通过调用`nonfungiblePositionManager.createAndInitializePoolIfNecessary`来创建池子，在`v3-periphery/base/PoolInitializer.sol:createAndInitializePoolIfNecessary`可以看见该函数没有调用者的限制条件，实际上，是由 nonfungiblePositionManager 通过调用`UniswapV3Factory.createPool`来创建并初始化池子。
 
-```
-function createAndInitializePoolIfNecessary(address token0,address token1,uint24 fee,uint160 sqrtPriceX96)
-    external payable override
-    returns (address pool) {
-        ...
-@>          pool = IUniswapV3Factory(factory).createPool(token0, token1, fee);
-@>          IUniswapV3Pool(pool).initialize(sqrtPriceX96);
-        ...
-    }
-```
 
 ### 3. 通过 mint position 来提供 uniswap pool 流动性
 
@@ -136,6 +183,51 @@ revert:stdstorage find(stdstorage): Slot(s)not found
 Failing tests:
 Encountered 1 failing test in test/SimpleSwap.t.sol:SimpleSwapTest[FAIL. Reason: setup failed: revert: stdstorage find(stdstorage): slot(s) not found.] setUp()(gas: 0)
 ```
+#### 如何计算 pool 地址
+我们可以看一下 v3-periphery 是如何计算 pool 的地址，在 `contracts/v3-periphery/libraries/PoolAddress.sol`这个库里，
+```
+    bytes32 internal constant POOL_INIT_CODE_HASH = 0xf44a6ca8f731f3b2fbcec713be7a4aac0f6def89dde83092b2d61766e95c95e3;
+
+    function computeAddress(address factory, PoolKey memory key) internal pure returns (address pool) {
+        require(key.token0 < key.token1);
+        pool = address(
+            uint256(
+                keccak256(
+                    abi.encodePacked(
+                        hex'ff',
+                        factory,
+                        keccak256(abi.encode(key.token0, key.token1, key.fee)),
+                        POOL_INIT_CODE_HASH
+                    )
+                )
+            )
+        );
+    }
+```
+`POOL_INIT_CODE_HASH`是什么呢，为什么可以通过`address(uint256(keccak256(abi.encodePacked(hex'ff',factory,keccak256(abi.encode(key.token0, key.token1, key.fee)),POOL_INIT_CODE_HASH)))))`计算出来，首先了解一下[create2](https://docs.soliditylang.org/en/latest/control-structures.html#salted-contract-creations-create2)，里面提到 create2 根据创建合约的地址、指定的 salt 值、创建的合约的（创建）字节码和构造函数参数来计算新合约的地址，同样也可以通过相应规则计算出地址。
+```
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity >=0.7.0 <0.9.0;
+contract D {}
+contract C {
+    function createDSalted(bytes32 salt) public {
+        address predictedAddress = address(uint160(uint(keccak256(abi.encodePacked(
+            bytes1(0xff),
+            address(this),
+            salt,
+            keccak256(abi.encodePacked(
+                type(D).creationCode,
+                abi.encode(arg)
+            ))
+        )))));
+
+        D d = new D{salt: salt}();
+        require(address(d) == predictedAddress);
+    }
+}
+```
+我们在Pool合约的任何操作都会改变其字节码，我们可以通过 `bytes32 POOL_INIT_CODE_HASH = keccak256(abi.encodePacked(type(UniswapV3Pool).creationCode))` 修改 POOL_INIT_CODE_HASH。
+通过 core 部署工厂合约的测试代码[在这](https://github.com/Chocolatieee0929/UniswapV3-foundry-edition/blob/main/test/INIT_CODE.t.sol)。
 
 #### mint position 的边界情况
 
@@ -189,3 +281,4 @@ function update(...) internal returns (bool flipped) {
     │   └─ ← revert: LO
     └─ ← revert: LO
 ```
+对流动性边界测试完整代码[在这](https://github.com/Chocolatieee0929/UniswapV3-foundry-edition/blob/main/test/SwapRouter.t.sol)
