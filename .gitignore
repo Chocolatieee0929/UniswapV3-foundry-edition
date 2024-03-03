@@ -11,3 +11,5 @@ out/
 
 # environment variables
 .env
+
+package-lock.json
