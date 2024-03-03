@@ -133,7 +133,6 @@ contract UniswapV3FlashSwapTest is BaseDeploy {
 		vm.startPrank(deployer);
 		FlashSwap = new FlashSwapMock(address(swapRouter));
 
-		// 创建费率为FEE_MEDIUM的池子
 		pool1 = mintNewPool(tokens[0], tokens[1], FEE_MEDIUM, INIT_PRICE);
 		pool2 = mintNewPool(tokens[0], tokens[1], FEE_LOW, INIT_PRICE);
 
