@@ -27,6 +27,8 @@ contract FlashSwapMock {
 	constructor(address _router) {
 		router = ISwapRouter(_router);
 	}
+
+	// amountIn - 期望最低收益
 	function flashSwap(
 		address pool0,
 		uint24 fee1,
@@ -166,7 +168,7 @@ contract UniswapV3FlashSwapTest is BaseDeploy {
 		// Approve tokens[0] fee
 		uint tokensMaxFee = 10e18;
 		deal(tokens[0], address(this), tokensMaxFee);
-		// IERC20(tokens[0]).deposit{ value: tokens0MaxFee }();
+		
 		IERC20(tokens[0]).approve(address(FlashSwap), tokensMaxFee);
 
 		uint balBefore = IERC20(tokens[0]).balanceOf(address(this));
@@ -188,7 +190,6 @@ contract UniswapV3FlashSwapTest is BaseDeploy {
 		// Approve tokens[0] fee
 		uint tokensMaxFee = 10e18;
 		deal(tokens[0], address(this), tokensMaxFee);
-		// IERC20(tokens[0]).deposit{ value: tokens0MaxFee }();
 		IERC20(tokens[0]).approve(address(FlashSwap), tokensMaxFee);
 
 		vm.expectRevert();

@@ -22,6 +22,7 @@ library Tick {
         int128 liquidityNet;
         // fee growth per unit of liquidity on the _other_ side of this tick (relative to the current tick)
         // only has relative meaning, not absolute — the value depends on when the tick is initialized
+        // 每单位流动性手续费
         uint256 feeGrowthOutside0X128;
         uint256 feeGrowthOutside1X128;
         // the cumulative tick value on the other side of the tick
