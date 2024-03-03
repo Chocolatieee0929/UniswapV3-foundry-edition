@@ -3,7 +3,9 @@ pragma solidity >=0.5.0;
 
 /// @title Provides functions for deriving a pool address from the factory, tokens, and the fee
 library PoolAddress {
-    bytes32 internal constant POOL_INIT_CODE_HASH = 0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54;
+    // bytes32 POOL_INIT_CODE_HASH = keccak256(abi.encodePacked(type(UniswapV3Pool).creationCode));
+    // bytes32 internal constant POOL_INIT_CODE_HASH = 0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54;
+    bytes32 internal constant POOL_INIT_CODE_HASH = 0xf44a6ca8f731f3b2fbcec713be7a4aac0f6def89dde83092b2d61766e95c95e3;
 
     /// @notice The identifying key of the pool
     struct PoolKey {
