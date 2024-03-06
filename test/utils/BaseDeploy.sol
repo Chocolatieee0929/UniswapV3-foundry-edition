@@ -20,7 +20,8 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "contracts/v3-periphery/test/TestERC20.sol";
 import "forge-std/StdUtils.sol";
 
-string constant v3FactoryArtifact = "node_modules/@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json";
+// string constant v3FactoryArtifact = "node_modules/@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json";
+string constant v3FactoryArtifact = "out/UniswapV3Factory.sol/UniswapV3Factory.json";
 string constant weth9Artifact = "test/utils/WETH9.json";
 
 interface WETH9 is IERC20Minimal {

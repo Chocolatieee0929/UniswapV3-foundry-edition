@@ -25,6 +25,7 @@ contract SimpleSwapTest is BaseDeploy {
 
     /* 官方设置手续费 */
     function test_setProtocolFee() public {
+        vm.prank(deployer);
         IUniswapV3PoolOwnerActions(pool).setFeeProtocol(5,5);
     }
 

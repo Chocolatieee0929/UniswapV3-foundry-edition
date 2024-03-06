@@ -103,7 +103,7 @@ contract SwapRouterTest is BaseDeploy {
 			vm.expectRevert();
 			mintOneTwoPosition_M(tickLower, tickUpper, liquidity);
 		}
-
+		
 		vm.stopPrank();
 	}
 

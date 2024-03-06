@@ -46,7 +46,7 @@ contract POOLCODETest is Test {
 
 	address[] tokens;
 	
-	function setUp() public override {
+	function setUp() public {
 
 		/* 配置Uniswap环境 */
 		vm.startPrank(deployer);
@@ -58,7 +58,6 @@ contract POOLCODETest is Test {
 
 		poolFactory = new UniswapV3Factory();
 		swapRouter = new SwapRouter(address(poolFactory), address(weth9));
-        getToken();
 
 		nonfungiblePositionManager = new NonfungiblePositionManager(
 			address(poolFactory),
@@ -70,6 +69,7 @@ contract POOLCODETest is Test {
 				)
 			)
 		);
+        getToken();
 
 		vm.stopPrank();
 	}
